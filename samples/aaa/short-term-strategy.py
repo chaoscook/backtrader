@@ -534,7 +534,7 @@ def runstrat():
     cerebro.adddata(data1, name='1d')
 
     cerebro.run()
-    # cerebro.plot(style='bar')
+    cerebro.plot(style='bar')
 
 
 def parse_args():
