@@ -84,62 +84,7 @@ class ShortTermTradingStrategy(bt.Strategy):
         self.buyprice = None
         self.buycomm = None
 
-    def _add_valid_bar(self, data):
-        curr_bar = dict(datetime=bt.num2date(data.datetime[0]),
-                        open=data.open[0],
-                        high=data.high[0],
-                        low=data.low[0],
-                        close=data.close[0],
-                        volume=data.volume[0],
-                        openinterest=data.openinterest[0])
-
-        if self.data0_valid_bars.shape[0] == 0:
-            self.data0_valid_bars.loc[len(self.data0_valid_bars)] = curr_bar
-            return
-
-        # -------------------------------------------------
-        # 剔除内包K线
-        # -------------------------------------------------
-        prev_bar = self.data0_valid_bars.iloc[-1]
-
-        if curr_bar['high'] <= prev_bar['high'] and curr_bar['low'] >= prev_bar['low']:
-            self.log0('内包K线，视作无效')
-            return
-
-        # -------------------------------------------------
-        # 剔除外包K线
-        # -------------------------------------------------
-        for _ in range(12):
-            if ((prev_bar['high'] < curr_bar['high'] and prev_bar['low'] >= curr_bar['low']) or
-                    (prev_bar['high'] <= curr_bar['high'] and prev_bar['low'] > curr_bar['low'])):
-                self.data0_valid_bars = self.data0_valid_bars.iloc[:-1]
-                self.log0('外包K线，剔除前一根K线')
-            else:
-                break
-            prev_bar = self.data0_valid_bars.iloc[-1]
-
-        self.data0_valid_bars.loc[len(self.data0_valid_bars)] = curr_bar
-
-    def add_upper_tp1(self):
-        pass
-
-    def add_upper_tp2(self):
-        pass
-
-    def add_upper_tp3(self):
-        pass
-
-    def add_lower_tp1(self):
-        pass
-
-    def add_lower_tp2(self):
-        pass
-
-    def add_lower_tp3(self):
-        pass
-
     def data0_next(self):
-
         curr_bar = dict(datetime=bt.num2date(self.data0.datetime[0]),
                         open=self.data0.open[0],
                         high=self.data0.high[0],
@@ -156,9 +101,8 @@ class ShortTermTradingStrategy(bt.Strategy):
         # 剔除内包K线
         # -------------------------------------------------
         prev_bar = self.data0_valid_bars.iloc[-1]
-
         if curr_bar['high'] <= prev_bar['high'] and curr_bar['low'] >= prev_bar['low']:
-            self.log0('内包K线，视作无效')
+            self.log0('内包，当前K线无效')
             return
 
         # -------------------------------------------------
@@ -167,13 +111,55 @@ class ShortTermTradingStrategy(bt.Strategy):
         for _ in range(12):
             if ((prev_bar['high'] < curr_bar['high'] and prev_bar['low'] >= curr_bar['low']) or
                     (prev_bar['high'] <= curr_bar['high'] and prev_bar['low'] > curr_bar['low'])):
+
+                # -------------------------------------------------
+                # 剔除已添加K线前，清理短中长期拐点
+                # -------------------------------------------------
+                if self.data0_upper_tp1.shape[0] >= 1:
+                    last_upper_tp1 = self.data0_upper_tp1.iloc[-1]
+                    if last_upper_tp1['datetime'] == prev_bar['datetime']:
+                        self.data0_upper_tp1 = self.data0_upper_tp1[:-1]
+                        self.log0('剔除被外包的短期上拐点K线')
+
+                if self.data0_upper_tp2.shape[0] >= 1:
+                    last_upper_tp2 = self.data0_upper_tp2.iloc[-1]
+                    if last_upper_tp2['datetime'] == prev_bar['datetime']:
+                        self.data0_upper_tp2 = self.data0_upper_tp2[:-1]
+                        self.log0('剔除被外包的中期上拐点K线')
+
+                if self.data0_upper_tp3.shape[0] >= 1:
+                    last_upper_tp3 = self.data0_upper_tp3.iloc[-1]
+                    if last_upper_tp3['datetime'] == prev_bar['datetime']:
+                        self.data0_upper_tp3 = self.data0_upper_tp3[:-1]
+                        self.log0('剔除被外包的长期上拐点K线')
+
+                if self.data0_lower_tp1.shape[0] >= 1:
+                    last_lower_tp1 = self.data0_lower_tp1.iloc[-1]
+                    if last_lower_tp1['datetime'] == prev_bar['datetime']:
+                        self.data0_lower_tp1 = self.data0_lower_tp1[:-1]
+                        self.log0('剔除被外包的短期下拐点K线')
+
+                if self.data0_lower_tp2.shape[0] >= 1:
+                    last_lower_tp2 = self.data0_lower_tp2.iloc[-1]
+                    if last_lower_tp2['datetime'] == prev_bar['datetime']:
+                        self.data0_lower_tp2 = self.data0_lower_tp2[:-1]
+                        self.log0('剔除被外包的中期下拐点K线')
+
+                if self.data0_lower_tp3.shape[0] >= 1:
+                    last_lower_tp3 = self.data0_lower_tp3.iloc[-1]
+                    if last_lower_tp3['datetime'] == prev_bar['datetime']:
+                        self.data0_lower_tp3 = self.data0_lower_tp3[:-1]
+                        self.log0('剔除被外包的长期下拐点K线')
+
                 self.data0_valid_bars = self.data0_valid_bars.iloc[:-1]
-                self.log0('外包K线，剔除前一根K线')
+                self.log0('外包，弹出前一K线')
+
             else:
                 break
             prev_bar = self.data0_valid_bars.iloc[-1]
 
         self.data0_valid_bars.loc[len(self.data0_valid_bars)] = curr_bar
+
         # -------------------------------------------------
         # 标注短、中、长期拐点
         # -------------------------------------------------
@@ -196,7 +182,13 @@ class ShortTermTradingStrategy(bt.Strategy):
         # -------------------------------------------------
         if ((pprev_high <= prev_high and pprev_low < prev_low)
                 and (curr_high <= prev_high and curr_low < prev_low)):
-            self.data0_upper_tp1.loc[len(self.data0_upper_tp1)] = prev_bar
+            # 避免已确定为拐点的K线，因后续的出现内包外包而重复添加
+            if self.data0_upper_tp1.shape[0] < 1:
+                self.data0_upper_tp1.loc[len(self.data0_upper_tp1)] = prev_bar
+            else:
+                last_upper_tp1 = self.data0_upper_tp1.iloc[-1]
+                if last_upper_tp1['datetime'] != prev_bar['datetime']:
+                    self.data0_upper_tp1.loc[len(self.data0_upper_tp1)] = prev_bar
 
             # -------------------------------------------------
             # 判断是否有中期上拐点形成
@@ -210,7 +202,13 @@ class ShortTermTradingStrategy(bt.Strategy):
 
             if (prev_upper_tp1['high'] >= pprev_upper_tp1['high']
                     and prev_upper_tp1['high'] >= curr_upper_tp1['high']):
-                self.data0_upper_tp2.loc[len(self.data0_upper_tp2)] = prev_upper_tp1
+
+                if self.data0_upper_tp2.shape[0] < 1:
+                    self.data0_upper_tp2.loc[len(self.data0_upper_tp2)] = prev_upper_tp1
+                else:
+                    last_upper_tp2 = self.data0_upper_tp2.iloc[-1]
+                    if last_upper_tp2['datetime'] != prev_upper_tp1['datetime']:
+                        self.data0_upper_tp2.loc[len(self.data0_upper_tp1)] = prev_upper_tp1
 
                 # -------------------------------------------------
                 # 判断是否有长期上拐点形成
@@ -224,14 +222,25 @@ class ShortTermTradingStrategy(bt.Strategy):
 
                 if (prev_upper_tp2['high'] >= pprev_upper_tp2['high']
                         and prev_upper_tp2['high'] >= curr_upper_tp2['high']):
-                    self.data0_upper_tp3.loc[len(self.data0_upper_tp3)] = prev_upper_tp2
+                    if self.data0_upper_tp3.shape[0] < 1:
+                        self.data0_upper_tp3.loc[len(self.data0_upper_tp3)] = prev_upper_tp2
+                    else:
+                        last_upper_tp3 = self.data0_upper_tp3.iloc[-1]
+                        if last_upper_tp3['datetime'] != prev_upper_tp2['datetime']:
+                            self.data0_upper_tp3.loc[len(self.data0_upper_tp3)] = prev_upper_tp2
 
         # -------------------------------------------------
         # 判断是否有短期下拐点形成
         # -------------------------------------------------
         if ((pprev_high > prev_high and pprev_low >= prev_low)
                 and (curr_high > prev_high and curr_low >= prev_low)):
-            self.data0_lower_tp1.loc[len(self.data0_lower_tp1)] = prev_bar
+
+            if self.data0_lower_tp1.shape[0] < 1:
+                self.data0_lower_tp1.loc[len(self.data0_lower_tp1)] = prev_bar
+            else:
+                last_lower_tp1 = self.data0_lower_tp1.iloc[-1]
+                if last_lower_tp1['datetime'] != prev_bar['datetime']:
+                    self.data0_lower_tp1.loc[len(self.data0_lower_tp1)] = prev_bar
 
             # -------------------------------------------------
             # 判断是否有中期下拐点形成
@@ -242,10 +251,15 @@ class ShortTermTradingStrategy(bt.Strategy):
             curr_lower_tp1 = self.data0_lower_tp1.iloc[-1]
             prev_lower_tp1 = self.data0_lower_tp1.iloc[-2]
             pprev_lower_tp1 = self.data0_lower_tp1.iloc[-3]
-            if (prev_lower_tp1['low'] <= pprev_lower_tp1['low']
-                    and prev_lower_tp1['low'] <= curr_lower_tp1['low']):
-                self.data0_lower_tp2.loc[len(self.data0_lower_tp2)] = prev_lower_tp1
+            if ((prev_lower_tp1['low'] <= pprev_lower_tp1['low'])
+                    and (prev_lower_tp1['low'] <= curr_lower_tp1['low'])):
 
+                if self.data0_lower_tp2.shape[0] < 1:
+                    self.data0_lower_tp2.loc[len(self.data0_lower_tp2)] = prev_lower_tp1
+                else:
+                    last_lower_tp2 = self.data0_lower_tp2.iloc[-1]
+                    if last_lower_tp2['datetime'] != prev_lower_tp1['datetime']:
+                        self.data0_lower_tp2.loc[len(self.data0_lower_tp2)] = prev_lower_tp1
                 # -------------------------------------------------
                 # 判断是否有长期下拐点形成
                 # -------------------------------------------------
@@ -256,9 +270,15 @@ class ShortTermTradingStrategy(bt.Strategy):
                 prev_lower_tp2 = self.data0_lower_tp2.iloc[-2]
                 pprev_lower_tp2 = self.data0_lower_tp2.iloc[-3]
 
-                if (prev_lower_tp2['low'] <= pprev_lower_tp2['low']
-                        and prev_lower_tp2['low'] <= curr_lower_tp2['low']):
-                    self.data0_lower_tp3.loc[len(self.data0_lower_tp3)] = prev_lower_tp2
+                if ((prev_lower_tp2['low'] <= pprev_lower_tp2['low'])
+                        and (prev_lower_tp2['low'] <= curr_lower_tp2['low'])):
+
+                    if self.data0_lower_tp3.shape[0] < 1:
+                        self.data0_lower_tp3.loc[len(self.data0_lower_tp3)] = prev_lower_tp2
+                    else:
+                        last_lower_tp3 = self.data0_lower_tp3.iloc[-1]
+                        if last_lower_tp3['datetime'] != prev_lower_tp2['datetime']:
+                            self.data0_lower_tp3.loc[len(self.data0_lower_tp3)] = prev_lower_tp2
 
     def data1_next(self):
         curr_bar = dict(datetime=bt.num2date(self.data1.datetime[0]),
@@ -277,9 +297,8 @@ class ShortTermTradingStrategy(bt.Strategy):
         # 剔除内包K线
         # -------------------------------------------------
         prev_bar = self.data1_valid_bars.iloc[-1]
-
         if curr_bar['high'] <= prev_bar['high'] and curr_bar['low'] >= prev_bar['low']:
-            self.log1('内包K线，视作无效')
+            self.log1('内包，当前K线无效')
             return
 
         # -------------------------------------------------
@@ -288,13 +307,55 @@ class ShortTermTradingStrategy(bt.Strategy):
         for _ in range(12):
             if ((prev_bar['high'] < curr_bar['high'] and prev_bar['low'] >= curr_bar['low']) or
                     (prev_bar['high'] <= curr_bar['high'] and prev_bar['low'] > curr_bar['low'])):
+
+                # -------------------------------------------------
+                # 剔除已添加K线前，清理短中长期拐点
+                # -------------------------------------------------
+                if self.data1_upper_tp1.shape[0] >= 1:
+                    last_upper_tp1 = self.data1_upper_tp1.iloc[-1]
+                    if last_upper_tp1['datetime'] == prev_bar['datetime']:
+                        self.data1_upper_tp1 = self.data1_upper_tp1[:-1]
+                        self.log1('剔除被外包的短期上拐点K线')
+
+                if self.data1_upper_tp2.shape[0] >= 1:
+                    last_upper_tp2 = self.data1_upper_tp2.iloc[-1]
+                    if last_upper_tp2['datetime'] == prev_bar['datetime']:
+                        self.data1_upper_tp2 = self.data1_upper_tp2[:-1]
+                        self.log1('剔除被外包的中期上拐点K线')
+
+                if self.data1_upper_tp3.shape[0] >= 1:
+                    last_upper_tp3 = self.data1_upper_tp3.iloc[-1]
+                    if last_upper_tp3['datetime'] == prev_bar['datetime']:
+                        self.data1_upper_tp3 = self.data1_upper_tp3[:-1]
+                        self.log1('剔除被外包的长期上拐点K线')
+
+                if self.data1_lower_tp1.shape[0] >= 1:
+                    last_lower_tp1 = self.data1_lower_tp1.iloc[-1]
+                    if last_lower_tp1['datetime'] == prev_bar['datetime']:
+                        self.data1_lower_tp1 = self.data1_lower_tp1[:-1]
+                        self.log1('剔除被外包的短期下拐点K线')
+
+                if self.data1_lower_tp2.shape[0] >= 1:
+                    last_lower_tp2 = self.data1_lower_tp2.iloc[-1]
+                    if last_lower_tp2['datetime'] == prev_bar['datetime']:
+                        self.data1_lower_tp2 = self.data1_lower_tp2[:-1]
+                        self.log1('剔除被外包的中期下拐点K线')
+
+                if self.data1_lower_tp3.shape[0] >= 1:
+                    last_lower_tp3 = self.data1_lower_tp3.iloc[-1]
+                    if last_lower_tp3['datetime'] == prev_bar['datetime']:
+                        self.data1_lower_tp3 = self.data1_lower_tp3[:-1]
+                        self.log1('剔除被外包的长期下拐点K线')
+
                 self.data1_valid_bars = self.data1_valid_bars.iloc[:-1]
-                self.log1('外包K线，剔除前一根K线')
+                self.log1('外包，弹出前一K线')
+
             else:
                 break
             prev_bar = self.data1_valid_bars.iloc[-1]
 
         self.data1_valid_bars.loc[len(self.data1_valid_bars)] = curr_bar
+
         # -------------------------------------------------
         # 标注短、中、长期拐点
         # -------------------------------------------------
@@ -315,9 +376,9 @@ class ShortTermTradingStrategy(bt.Strategy):
         # -------------------------------------------------
         # 判断是否有短期上拐点形成
         # -------------------------------------------------
-        if (pprev_high <= prev_high and pprev_low < prev_low
-                and curr_high <= prev_high and curr_low < prev_low):
-            # TODO
+        if ((pprev_high <= prev_high and pprev_low < prev_low)
+                and (curr_high <= prev_high and curr_low < prev_low)):
+            # 避免已确定为拐点的K线，因后续的出现内包外包而重复添加
             if self.data1_upper_tp1.shape[0] < 1:
                 self.data1_upper_tp1.loc[len(self.data1_upper_tp1)] = prev_bar
             else:
@@ -335,10 +396,15 @@ class ShortTermTradingStrategy(bt.Strategy):
             prev_upper_tp1 = self.data1_upper_tp1.iloc[-2]
             pprev_upper_tp1 = self.data1_upper_tp1.iloc[-3]
 
-            # TODO
             if (prev_upper_tp1['high'] >= pprev_upper_tp1['high']
                     and prev_upper_tp1['high'] >= curr_upper_tp1['high']):
-                self.data1_upper_tp2.loc[len(self.data1_upper_tp2)] = prev_upper_tp1
+
+                if self.data1_upper_tp2.shape[0] < 1:
+                    self.data1_upper_tp2.loc[len(self.data1_upper_tp2)] = prev_upper_tp1
+                else:
+                    last_upper_tp2 = self.data1_upper_tp2.iloc[-1]
+                    if last_upper_tp2['datetime'] != prev_upper_tp1['datetime']:
+                        self.data1_upper_tp2.loc[len(self.data1_upper_tp1)] = prev_upper_tp1
 
                 # -------------------------------------------------
                 # 判断是否有长期上拐点形成
@@ -350,18 +416,21 @@ class ShortTermTradingStrategy(bt.Strategy):
                 prev_upper_tp2 = self.data1_upper_tp2.iloc[-2]
                 pprev_upper_tp2 = self.data1_upper_tp2.iloc[-3]
 
-                # TODO
                 if (prev_upper_tp2['high'] >= pprev_upper_tp2['high']
                         and prev_upper_tp2['high'] >= curr_upper_tp2['high']):
-                    self.data1_upper_tp3.loc[len(self.data1_upper_tp3)] = prev_upper_tp2
+                    if self.data1_upper_tp3.shape[0] < 1:
+                        self.data1_upper_tp3.loc[len(self.data1_upper_tp3)] = prev_upper_tp2
+                    else:
+                        last_upper_tp3 = self.data1_upper_tp3.iloc[-1]
+                        if last_upper_tp3['datetime'] != prev_upper_tp2['datetime']:
+                            self.data1_upper_tp3.loc[len(self.data1_upper_tp3)] = prev_upper_tp2
 
         # -------------------------------------------------
         # 判断是否有短期下拐点形成
         # -------------------------------------------------
-        if (pprev_high > prev_high and pprev_low >= prev_low
-                and curr_high > prev_high and curr_low >= prev_low):
+        if ((pprev_high > prev_high and pprev_low >= prev_low)
+                and (curr_high > prev_high and curr_low >= prev_low)):
 
-            # TODO
             if self.data1_lower_tp1.shape[0] < 1:
                 self.data1_lower_tp1.loc[len(self.data1_lower_tp1)] = prev_bar
             else:
@@ -378,18 +447,15 @@ class ShortTermTradingStrategy(bt.Strategy):
             curr_lower_tp1 = self.data1_lower_tp1.iloc[-1]
             prev_lower_tp1 = self.data1_lower_tp1.iloc[-2]
             pprev_lower_tp1 = self.data1_lower_tp1.iloc[-3]
+            if ((prev_lower_tp1['low'] <= pprev_lower_tp1['low'])
+                    and (prev_lower_tp1['low'] <= curr_lower_tp1['low'])):
 
-            if (prev_lower_tp1['low'] <= pprev_lower_tp1['low']
-                    and prev_lower_tp1['low'] <= curr_lower_tp1['low']):
-
-                # TODO
                 if self.data1_lower_tp2.shape[0] < 1:
                     self.data1_lower_tp2.loc[len(self.data1_lower_tp2)] = prev_lower_tp1
                 else:
                     last_lower_tp2 = self.data1_lower_tp2.iloc[-1]
                     if last_lower_tp2['datetime'] != prev_lower_tp1['datetime']:
                         self.data1_lower_tp2.loc[len(self.data1_lower_tp2)] = prev_lower_tp1
-
                 # -------------------------------------------------
                 # 判断是否有长期下拐点形成
                 # -------------------------------------------------
@@ -400,10 +466,15 @@ class ShortTermTradingStrategy(bt.Strategy):
                 prev_lower_tp2 = self.data1_lower_tp2.iloc[-2]
                 pprev_lower_tp2 = self.data1_lower_tp2.iloc[-3]
 
-                # TODO
-                if (prev_lower_tp2['low'] <= pprev_lower_tp2['low']
-                        and prev_lower_tp2['low'] <= curr_lower_tp2['low']):
-                    self.data1_lower_tp3.loc[len(self.data1_lower_tp3)] = prev_lower_tp2
+                if ((prev_lower_tp2['low'] <= pprev_lower_tp2['low'])
+                        and (prev_lower_tp2['low'] <= curr_lower_tp2['low'])):
+
+                    if self.data1_lower_tp3.shape[0] < 1:
+                        self.data1_lower_tp3.loc[len(self.data1_lower_tp3)] = prev_lower_tp2
+                    else:
+                        last_lower_tp3 = self.data1_lower_tp3.iloc[-1]
+                        if last_lower_tp3['datetime'] != prev_lower_tp2['datetime']:
+                            self.data1_lower_tp3.loc[len(self.data1_lower_tp3)] = prev_lower_tp2
 
     def next(self):
         print('next::current period:', len(self.data0))
