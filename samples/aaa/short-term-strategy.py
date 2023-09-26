@@ -156,6 +156,7 @@ class ShortTermTradingStrategy(bt.Strategy):
 
             else:
                 break
+
             prev_bar = self.data0_valid_bars.iloc[-1]
 
         self.data0_valid_bars.loc[len(self.data0_valid_bars)] = curr_bar
@@ -251,6 +252,7 @@ class ShortTermTradingStrategy(bt.Strategy):
             curr_lower_tp1 = self.data0_lower_tp1.iloc[-1]
             prev_lower_tp1 = self.data0_lower_tp1.iloc[-2]
             pprev_lower_tp1 = self.data0_lower_tp1.iloc[-3]
+
             if ((prev_lower_tp1['low'] <= pprev_lower_tp1['low'])
                     and (prev_lower_tp1['low'] <= curr_lower_tp1['low'])):
 
@@ -352,6 +354,7 @@ class ShortTermTradingStrategy(bt.Strategy):
 
             else:
                 break
+
             prev_bar = self.data1_valid_bars.iloc[-1]
 
         self.data1_valid_bars.loc[len(self.data1_valid_bars)] = curr_bar
@@ -447,6 +450,7 @@ class ShortTermTradingStrategy(bt.Strategy):
             curr_lower_tp1 = self.data1_lower_tp1.iloc[-1]
             prev_lower_tp1 = self.data1_lower_tp1.iloc[-2]
             pprev_lower_tp1 = self.data1_lower_tp1.iloc[-3]
+
             if ((prev_lower_tp1['low'] <= pprev_lower_tp1['low'])
                     and (prev_lower_tp1['low'] <= curr_lower_tp1['low'])):
 
@@ -494,21 +498,6 @@ class ShortTermTradingStrategy(bt.Strategy):
         #     return
 
     def stop(self):
-        print(self.data0_valid_bars.shape)
-        print(self.data0_upper_tp1.shape)
-        print(self.data0_lower_tp1.shape)
-        print(self.data0_upper_tp2.shape)
-        print(self.data0_lower_tp2.shape)
-        print(self.data0_upper_tp3.shape)
-        print(self.data0_lower_tp3.shape)
-
-        print(self.data1_valid_bars.shape)
-        print(self.data1_upper_tp1.shape)
-        print(self.data1_lower_tp1.shape)
-        print(self.data1_upper_tp2.shape)
-        print(self.data1_lower_tp2.shape)
-        print(self.data1_upper_tp3.shape)
-        print(self.data1_lower_tp3.shape)
         print('==================================================')
         print('Starting Value - %.2f' % self.broker.startingcash)
         print('Ending   Value - %.2f' % self.broker.getvalue())
