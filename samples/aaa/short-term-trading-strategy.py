@@ -11,89 +11,114 @@ import backtrader.feeds as btfeeds
 
 class ShortTermTradingStrategy(bt.Strategy):
     params = (
-        ('period', 5),
-        ('stake', 1),
+        ('period', 20),
     )
 
-    def log(self, txt, dt=None):
-        dt = dt or self.data.datetime[0]
+    def log0(self, txt, dt=None):
+        dt = dt or self.data0.datetime[0]
         dt = bt.num2date(dt)
-        print('%s, %s' % (dt.isoformat(), txt))
+        print('data0 - %s - %s' % (dt.isoformat(), txt))
+
+    def log1(self, txt, dt=None):
+        dt = dt or self.data1.datetime[0]
+        dt = bt.num2date(dt)
+        print('data1 - %s - %s' % (dt.isoformat(), txt))
+
+    def notify_order(self, order):
+        if order.status in [order.Submitted, order.Accepted]:
+            # Buy/Sell order submitted/accepted to/by broker - Nothing to do
+            return
+
+        # Check if an order has been completed
+        # Attention: broker could reject order if not enough cash
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                self.log(
+                    'BUY EXECUTED, Price: %.2f, Cost: %.2f, Comm %.2f' %
+                    (order.executed.price,
+                     order.executed.value,
+                     order.executed.comm))
+
+                self.buyprice = order.executed.price
+                self.buycomm = order.executed.comm
+            else:  # Sell
+                self.log('SELL EXECUTED, Price: %.2f, Cost: %.2f, Comm %.2f' %
+                         (order.executed.price,
+                          order.executed.value,
+                          order.executed.comm))
+
+            self.bar_executed = len(self)
+
+        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+            self.log('Order Canceled/Margin/Rejected')
+
+        # Write down: no pending order
+        self.order = None
 
     def __init__(self):
+        columns = ['datetime', 'open', 'high', 'low', 'close', 'volume', 'openinterest']
+        self.data0_valid_bars = pd.DataFrame(columns=columns)
+        self.data0_upper_tp1 = pd.DataFrame(columns=columns)
+        self.data0_lower_tp1 = pd.DataFrame(columns=columns)
+        self.data0_upper_tp2 = pd.DataFrame(columns=columns)
+        self.data0_lower_tp2 = pd.DataFrame(columns=columns)
+        self.data0_upper_tp3 = pd.DataFrame(columns=columns)
+        self.data0_lower_tp3 = pd.DataFrame(columns=columns)
+
+        self.data1_valid_bars = pd.DataFrame(columns=columns)
+        self.data1_upper_tp1 = pd.DataFrame(columns=columns)
+        self.data1_lower_tp1 = pd.DataFrame(columns=columns)
+        self.data1_upper_tp2 = pd.DataFrame(columns=columns)
+        self.data1_lower_tp2 = pd.DataFrame(columns=columns)
+        self.data1_upper_tp3 = pd.DataFrame(columns=columns)
+        self.data1_lower_tp3 = pd.DataFrame(columns=columns)
+
+        self.boll0 = bt.indicators.BollingerBands(self.data0)
+        self.boll1 = bt.indicators.BollingerBands(self.data1)
+
+        self.data1_last_datetime = None
+        self.data0_last_datetime = None
+
         # To control operation entries
         self.orderid = None
-        self.data0_valid_bars = pd.DataFrame(
-            columns=['datetime', 'open', 'high', 'low', 'close', 'volume', 'openinterest', 'turningpoint'])
-        self.data0_upper_tp1 = pd.DataFrame(
-            columns=['datetime', 'open', 'high', 'low', 'close', 'volume', 'openinterest', 'turningpoint'])
-        self.data0_lower_tp1 = pd.DataFrame(
-            columns=['datetime', 'open', 'high', 'low', 'close', 'volume', 'openinterest', 'turningpoint'])
-        self.data0_upper_tp2 = pd.DataFrame(
-            columns=['datetime', 'open', 'high', 'low', 'close', 'volume', 'openinterest', 'turningpoint'])
-        self.data0_lower_tp2 = pd.DataFrame(
-            columns=['datetime', 'open', 'high', 'low', 'close', 'volume', 'openinterest', 'turningpoint'])
-        self.data0_upper_tp3 = pd.DataFrame(
-            columns=['datetime', 'open', 'high', 'low', 'close', 'volume', 'openinterest', 'turningpoint'])
-        self.data0_lower_tp3 = pd.DataFrame(
-            columns=['datetime', 'open', 'high', 'low', 'close', 'volume', 'openinterest', 'turningpoint'])
+        self.buyprice = None
+        self.buycomm = None
 
-        self.data0_valid_bars.set_index('datetime')
-        self.data0_upper_tp1.set_index('datetime')
-        self.data0_lower_tp1.set_index('datetime')
-        self.data0_upper_tp2.set_index('datetime')
-        self.data0_lower_tp2.set_index('datetime')
-        self.data0_upper_tp3.set_index('datetime')
-        self.data0_lower_tp3.set_index('datetime')
-
-    def next(self):
-        # print('next::current period:', len(self.data0))
-
-        if self.orderid:
-            return
-
-        # 信号：中期拐点生成时，且长期拐点方向一致
-        bar = dict(datetime=bt.num2date(self.data0.datetime[0]),
-                   open=self.data0.open[0],
-                   high=self.data0.high[0],
-                   low=self.data0.low[0],
-                   close=self.data0.close[0],
-                   volume=self.data0.volume[0],
-                   openinterest=self.data0.openinterest[0],
-                   turningpoint=0)
+    def data0_next(self):
+        curr_bar = dict(datetime=bt.num2date(self.data0.datetime[0]),
+                        open=self.data0.open[0],
+                        high=self.data0.high[0],
+                        low=self.data0.low[0],
+                        close=self.data0.close[0],
+                        volume=self.data0.volume[0],
+                        openinterest=self.data0.openinterest[0])
 
         if self.data0_valid_bars.shape[0] == 0:
-            self.data0_valid_bars.loc[len(self.data0_valid_bars)] = bar
+            self.data0_valid_bars.loc[len(self.data0_valid_bars)] = curr_bar
             return
-        # -------------------------------------------------
-        # 剔除内外包K线
-        # -------------------------------------------------
-        high = bar['high']
-        low = bar['low']
 
+        # -------------------------------------------------
+        # 剔除内包K线
+        # -------------------------------------------------
         prev_bar = self.data0_valid_bars.iloc[-1]
-        prev_high = prev_bar['high']
-        prev_low = prev_bar['low']
 
-        # 如果是内包K线
-        if high <= prev_high and low >= prev_low:
+        if curr_bar['high'] <= prev_bar['high'] and curr_bar['low'] >= prev_bar['low']:
+            self.log0('内包K线，视作无效')
             return
 
-        # 如果是外包K线
+        # -------------------------------------------------
+        # 剔除外包K线
+        # -------------------------------------------------
         for _ in range(12):
-            if ((prev_high < high and prev_low >= low) or
-                    (prev_high <= high and prev_low > low)):
-                self.data0_valid_bars.drop(self.data0_valid_bars.tail(1).index)
-                # self.valid_bars = self.valid_bars.iloc[:-1]
+            if ((prev_bar['high'] < curr_bar['high'] and prev_bar['low'] >= curr_bar['low']) or
+                    (prev_bar['high'] <= curr_bar['high'] and prev_bar['low'] > curr_bar['low'])):
+                self.data0_valid_bars = self.data0_valid_bars.iloc[:-1]
+                self.log0('外包K线，剔除前一根K线')
             else:
                 break
-
             prev_bar = self.data0_valid_bars.iloc[-1]
-            prev_high = prev_bar['high']
-            prev_low = prev_bar['low']
 
-        self.data0_valid_bars.loc[len(self.data0_valid_bars)] = bar
-
+        self.data0_valid_bars.loc[len(self.data0_valid_bars)] = curr_bar
         # -------------------------------------------------
         # 标注短、中、长期拐点
         # -------------------------------------------------
@@ -114,82 +139,250 @@ class ShortTermTradingStrategy(bt.Strategy):
         # -------------------------------------------------
         # 判断是否有短期上拐点形成
         # -------------------------------------------------
-        upper_left = (pprev_high <= prev_high and pprev_low < prev_low)
-        upper_right = (curr_high <= prev_high and curr_low < prev_low)
-        print(upper_left, upper_right)
-        if upper_left and upper_right:
-            print('00000')
+        if ((pprev_high <= prev_high and pprev_low < prev_low)
+                and (curr_high <= prev_high and curr_low < prev_low)):
             self.data0_upper_tp1.loc[len(self.data0_upper_tp1)] = prev_bar
+
             # -------------------------------------------------
             # 判断是否有中期上拐点形成
             # -------------------------------------------------
-            print('11111')
             if self.data0_upper_tp1.shape[0] < 3:
                 return
 
-            upper_tp1_bar = self.data0_upper_tp1.iloc[-1]
-            prev_upper_tp1_bar = self.data0_upper_tp1.iloc[-2]
-            pprev_upper_tp1_bar = self.data0_upper_tp1.iloc[-3]
+            curr_upper_tp1 = self.data0_upper_tp1.iloc[-1]
+            prev_upper_tp1 = self.data0_upper_tp1.iloc[-2]
+            pprev_upper_tp1 = self.data0_upper_tp1.iloc[-3]
 
-            if (prev_upper_tp1_bar['high'] >= pprev_upper_tp1_bar['high']
-                    and prev_upper_tp1_bar['high'] >= upper_tp1_bar['high']):
-                self.data0_upper_tp2.loc[len(self.data0_upper_tp2)] = prev_upper_tp1_bar
+            if (prev_upper_tp1['high'] >= pprev_upper_tp1['high']
+                    and prev_upper_tp1['high'] >= curr_upper_tp1['high']):
+                self.data0_upper_tp2.loc[len(self.data0_upper_tp2)] = prev_upper_tp1
+
                 # -------------------------------------------------
                 # 判断是否有长期上拐点形成
                 # -------------------------------------------------
                 if self.data0_upper_tp2.shape[0] < 3:
                     return
 
-                upper_tp2_bar = self.data0_upper_tp2.iloc[-1]
-                prev_upper_tp2_bar = self.data0_upper_tp2.iloc[-2]
-                pprev_upper_tp2_bar = self.data0_upper_tp2.iloc[-3]
+                curr_upper_tp2 = self.data0_upper_tp2.iloc[-1]
+                prev_upper_tp2 = self.data0_upper_tp2.iloc[-2]
+                pprev_upper_tp2 = self.data0_upper_tp2.iloc[-3]
 
-                if (prev_upper_tp2_bar['high'] >= pprev_upper_tp2_bar['high']
-                        and prev_upper_tp2_bar['high'] >= upper_tp2_bar['high']):
-                    self.data0_upper_tp3.loc[len(self.data0_upper_tp3)] = prev_upper_tp2_bar
+                if (prev_upper_tp2['high'] >= pprev_upper_tp2['high']
+                        and prev_upper_tp2['high'] >= curr_upper_tp2['high']):
+                    self.data0_upper_tp3.loc[len(self.data0_upper_tp3)] = prev_upper_tp2
 
         # -------------------------------------------------
         # 判断是否有短期下拐点形成
         # -------------------------------------------------
-        lower_left = (pprev_high > prev_high and pprev_low >= prev_low)
-        lower_right = (high > prev_high and low >= prev_low)
-        if lower_left and lower_right:
+        if ((pprev_high > prev_high and pprev_low >= prev_low)
+                and (curr_high > prev_high and curr_low >= prev_low)):
             self.data0_lower_tp1.loc[len(self.data0_lower_tp1)] = prev_bar
+
             # -------------------------------------------------
             # 判断是否有中期下拐点形成
             # -------------------------------------------------
             if self.data0_lower_tp1.shape[0] < 3:
                 return
 
-            lower_tp1_bar = self.data0_lower_tp1.iloc[-1]
-            prev_lower_tp1_bar = self.data0_lower_tp1.iloc[-2]
-            pprev_lower_tp1_bar = self.data0_lower_tp1.iloc[-3]
-            if (prev_lower_tp1_bar['low'] <= pprev_lower_tp1_bar['low']
-                    and prev_lower_tp1_bar['low'] <= lower_tp1_bar['low']):
-                self.data0_lower_tp2.loc[len(self.data0_lower_tp2)] = prev_lower_tp1_bar
+            curr_lower_tp1 = self.data0_lower_tp1.iloc[-1]
+            prev_lower_tp1 = self.data0_lower_tp1.iloc[-2]
+            pprev_lower_tp1 = self.data0_lower_tp1.iloc[-3]
+            if (prev_lower_tp1['low'] <= pprev_lower_tp1['low']
+                    and prev_lower_tp1['low'] <= curr_lower_tp1['low']):
+                self.data0_lower_tp2.loc[len(self.data0_lower_tp2)] = prev_lower_tp1
+
                 # -------------------------------------------------
                 # 判断是否有长期下拐点形成
                 # -------------------------------------------------
                 if self.data0_lower_tp2.shape[0] < 3:
                     return
 
-                lower_tp2_bar = self.data0_lower_tp2.iloc[-1]
-                prev_lower_tp2_bar = self.data0_lower_tp2.iloc[-2]
-                pprev_lower_tp2_bar = self.data0_lower_tp2.iloc[-3]
+                curr_lower_tp2 = self.data0_lower_tp2.iloc[-1]
+                prev_lower_tp2 = self.data0_lower_tp2.iloc[-2]
+                pprev_lower_tp2 = self.data0_lower_tp2.iloc[-3]
 
-                if (prev_lower_tp2_bar['low'] <= pprev_lower_tp2_bar['low']
-                        and prev_lower_tp2_bar['low'] <= lower_tp2_bar['low']):
-                    self.data0_lower_tp3.loc[len(self.data0_lower_tp3)] = prev_lower_tp2_bar
+                if (prev_lower_tp2['low'] <= pprev_lower_tp2['low']
+                        and prev_lower_tp2['low'] <= curr_lower_tp2['low']):
+                    self.data0_lower_tp3.loc[len(self.data0_lower_tp3)] = prev_lower_tp2
+
+    def data1_next(self):
+        curr_bar = dict(datetime=bt.num2date(self.data1.datetime[0]),
+                        open=self.data1.open[0],
+                        high=self.data1.high[0],
+                        low=self.data1.low[0],
+                        close=self.data1.close[0],
+                        volume=self.data1.volume[0],
+                        openinterest=self.data1.openinterest[0])
+
+        if self.data1_valid_bars.shape[0] == 0:
+            self.data1_valid_bars.loc[len(self.data1_valid_bars)] = curr_bar
+            return
+
+        # -------------------------------------------------
+        # 剔除内包K线
+        # -------------------------------------------------
+        prev_bar = self.data1_valid_bars.iloc[-1]
+
+        if curr_bar['high'] <= prev_bar['high'] and curr_bar['low'] >= prev_bar['low']:
+            self.log1('内包K线，视作无效')
+            return
+
+        # -------------------------------------------------
+        # 剔除外包K线
+        # -------------------------------------------------
+        for _ in range(12):
+            if ((prev_bar['high'] < curr_bar['high'] and prev_bar['low'] >= curr_bar['low']) or
+                    (prev_bar['high'] <= curr_bar['high'] and prev_bar['low'] > curr_bar['low'])):
+                self.data1_valid_bars = self.data1_valid_bars.iloc[:-1]
+                self.log1('外包K线，剔除前一根K线')
+            else:
+                break
+            prev_bar = self.data1_valid_bars.iloc[-1]
+
+        self.data1_valid_bars.loc[len(self.data1_valid_bars)] = curr_bar
+        # -------------------------------------------------
+        # 标注短、中、长期拐点
+        # -------------------------------------------------
+        if self.data1_valid_bars.shape[0] < 3:
+            return
+
+        curr_bar = self.data1_valid_bars.iloc[-1]
+        prev_bar = self.data1_valid_bars.iloc[-2]
+        pprev_bar = self.data1_valid_bars.iloc[-3]
+
+        curr_high = curr_bar['high']
+        curr_low = curr_bar['low']
+        prev_high = prev_bar['high']
+        prev_low = prev_bar['low']
+        pprev_high = pprev_bar['high']
+        pprev_low = pprev_bar['low']
+
+        # -------------------------------------------------
+        # 判断是否有短期上拐点形成
+        # -------------------------------------------------
+        if (pprev_high <= prev_high and pprev_low < prev_low
+                and curr_high <= prev_high and curr_low < prev_low):
+            # TODO
+            if self.data1_upper_tp1.shape[0] < 1:
+                self.data1_upper_tp1.loc[len(self.data1_upper_tp1)] = prev_bar
+            else:
+                last_upper_tp1 = self.data1_upper_tp1.iloc[-1]
+                if last_upper_tp1['datetime'] != prev_bar['datetime']:
+                    self.data1_upper_tp1.loc[len(self.data1_upper_tp1)] = prev_bar
+
+            # -------------------------------------------------
+            # 判断是否有中期上拐点形成
+            # -------------------------------------------------
+            if self.data1_upper_tp1.shape[0] < 3:
+                return
+
+            curr_upper_tp1 = self.data1_upper_tp1.iloc[-1]
+            prev_upper_tp1 = self.data1_upper_tp1.iloc[-2]
+            pprev_upper_tp1 = self.data1_upper_tp1.iloc[-3]
+
+            # TODO
+            if (prev_upper_tp1['high'] >= pprev_upper_tp1['high']
+                    and prev_upper_tp1['high'] >= curr_upper_tp1['high']):
+                self.data1_upper_tp2.loc[len(self.data1_upper_tp2)] = prev_upper_tp1
+
+                # -------------------------------------------------
+                # 判断是否有长期上拐点形成
+                # -------------------------------------------------
+                if self.data1_upper_tp2.shape[0] < 3:
+                    return
+
+                curr_upper_tp2 = self.data1_upper_tp2.iloc[-1]
+                prev_upper_tp2 = self.data1_upper_tp2.iloc[-2]
+                pprev_upper_tp2 = self.data1_upper_tp2.iloc[-3]
+
+                # TODO
+                if (prev_upper_tp2['high'] >= pprev_upper_tp2['high']
+                        and prev_upper_tp2['high'] >= curr_upper_tp2['high']):
+                    self.data1_upper_tp3.loc[len(self.data1_upper_tp3)] = prev_upper_tp2
+
+        # -------------------------------------------------
+        # 判断是否有短期下拐点形成
+        # -------------------------------------------------
+        if (pprev_high > prev_high and pprev_low >= prev_low
+                and curr_high > prev_high and curr_low >= prev_low):
+
+            # TODO
+            if self.data1_lower_tp1.shape[0] < 1:
+                self.data1_lower_tp1.loc[len(self.data1_lower_tp1)] = prev_bar
+            else:
+                last_lower_tp1 = self.data1_lower_tp1.iloc[-1]
+                if last_lower_tp1['datetime'] != prev_bar['datetime']:
+                    self.data1_lower_tp1.loc[len(self.data1_lower_tp1)] = prev_bar
+
+            # -------------------------------------------------
+            # 判断是否有中期下拐点形成
+            # -------------------------------------------------
+            if self.data1_lower_tp1.shape[0] < 3:
+                return
+
+            curr_lower_tp1 = self.data1_lower_tp1.iloc[-1]
+            prev_lower_tp1 = self.data1_lower_tp1.iloc[-2]
+            pprev_lower_tp1 = self.data1_lower_tp1.iloc[-3]
+
+            if (prev_lower_tp1['low'] <= pprev_lower_tp1['low']
+                    and prev_lower_tp1['low'] <= curr_lower_tp1['low']):
+
+                # TODO
+                if self.data1_lower_tp2.shape[0] < 1:
+                    self.data1_lower_tp2.loc[len(self.data1_lower_tp2)] = prev_lower_tp1
+                else:
+                    last_lower_tp2 = self.data1_lower_tp2.iloc[-1]
+                    if last_lower_tp2['datetime'] != prev_lower_tp1['datetime']:
+                        self.data1_lower_tp2.loc[len(self.data1_lower_tp2)] = prev_lower_tp1
+
+                # -------------------------------------------------
+                # 判断是否有长期下拐点形成
+                # -------------------------------------------------
+                if self.data1_lower_tp2.shape[0] < 3:
+                    return
+
+                curr_lower_tp2 = self.data1_lower_tp2.iloc[-1]
+                prev_lower_tp2 = self.data1_lower_tp2.iloc[-2]
+                pprev_lower_tp2 = self.data1_lower_tp2.iloc[-3]
+
+                # TODO
+                if (prev_lower_tp2['low'] <= pprev_lower_tp2['low']
+                        and prev_lower_tp2['low'] <= curr_lower_tp2['low']):
+                    self.data1_lower_tp3.loc[len(self.data1_lower_tp3)] = prev_lower_tp2
+
+    def next(self):
+        print('next::current period:', len(self.data0))
+        print('next::current period:', len(self.data1))
+
+        # data0数据作为小周期数据，每次执行next都要做拐点判断
+        if not self.data0_last_datetime or bt.num2date(self.data0.datetime[0]) != bt.num2date(self.data0_last_datetime):
+            self.data0_last_datetime = self.data0.datetime[0]
+            self.data0_next()
+
+        # data1数据作为大周期数据，只有执行next时，日期发生改变才做拐点判断
+        if not self.data1_last_datetime or int(self.data1.datetime[0]) != int(self.data1_last_datetime):
+            self.data1_last_datetime = self.data1.datetime[0]
+            self.data1_next()
+
+        # if self.orderid:
+        #     return
 
     def stop(self):
-        print(f'valid bars: {self.data0_valid_bars.shape}')
-        print(f'data0_upper_tp1: {self.data0_upper_tp1}')
-        print(f'data0_lower_tp1: {self.data0_lower_tp1}')
-        print(f'data0_upper_tp2: {self.data0_upper_tp2}')
-        print(f'data0_lower_tp2: {self.data0_lower_tp2}')
-        print(f'data0_upper_tp3: {self.data0_upper_tp3}')
-        print(f'data0_lower_tp3: {self.data0_lower_tp3}')
+        print(self.data0_valid_bars.shape)
+        print(self.data0_upper_tp1.shape)
+        print(self.data0_lower_tp1.shape)
+        print(self.data0_upper_tp2.shape)
+        print(self.data0_lower_tp2.shape)
+        print(self.data0_upper_tp3.shape)
+        print(self.data0_lower_tp3.shape)
 
+        print(self.data1_valid_bars.shape)
+        print(self.data1_upper_tp1.shape)
+        print(self.data1_lower_tp1.shape)
+        print(self.data1_upper_tp2.shape)
+        print(self.data1_lower_tp2.shape)
+        print(self.data1_upper_tp3.shape)
+        print(self.data1_lower_tp3.shape)
         print('==================================================')
         print('Starting Value - %.2f' % self.broker.startingcash)
         print('Ending   Value - %.2f' % self.broker.getvalue())
@@ -200,32 +393,30 @@ def runstrat():
     args = parse_args()
 
     cerebro = bt.Cerebro()
-    cerebro.broker.setcash(30000.0)
+    cerebro.broker.setcash(100000.0)
     cerebro.addstrategy(
         ShortTermTradingStrategy,
-
         # args for the strategy
         period=args.period,
     )
 
     # Load the Data
-    datapath = 'SA88_20191201_20230908_1d.csv'
+    datapath = 'SA88_20191201_20230908_15m.csv'
     data0 = btfeeds.GenericCSVData(dataname=datapath,
-                                   dtformat='%Y-%m-%d',
                                    fromdate=datetime.datetime(2019, 12, 1),
                                    todate=datetime.datetime(2023, 9, 30),
                                    timeframe=bt.TimeFrame.Minutes,
                                    compression=1)
     cerebro.adddata(data0, name='15m')
 
-    # datapath = 'SA88_20191201_20230908_1d.csv'
-    # data1 = btfeeds.GenericCSVData(dataname=datapath,
-    #                                dtformat='%Y-%m-%d',
-    #                                fromdate=datetime.datetime(2019, 12, 1),
-    #                                todate=datetime.datetime(2023, 9, 30),
-    #                                timeframe=bt.TimeFrame.Days,
-    #                                compression=1)
-    # cerebro.adddata(data1, name='1d')
+    datapath = 'SA88_20191201_20230908_1d.csv'
+    data1 = btfeeds.GenericCSVData(dataname=datapath,
+                                   dtformat='%Y-%m-%d',
+                                   fromdate=datetime.datetime(2019, 12, 1),
+                                   todate=datetime.datetime(2023, 9, 30),
+                                   timeframe=bt.TimeFrame.Days,
+                                   compression=1)
+    cerebro.adddata(data1, name='1d')
 
     cerebro.run()
     # cerebro.plot(style='bar')

@@ -10,14 +10,14 @@ password = 'HpLzgGU1zWSCxNLe7BOC9C32UiyxnVgXQLsry2BFPM2SNM_IzTTQ5CH0G5uBOqafQyqn
 def rqdata_download(order_book_id, start_date, end_date):
     rqdatac.init(username, password)
 
-    #df = get_price(order_book_id, start_date, end_date, '1m')
-    #df.to_csv(f'{order_book_id}_{start_date}_{end_date}_1m.csv')
+    df = get_price(order_book_id, start_date, end_date, '1m')
+    df.to_csv(f'{order_book_id}_{start_date}_{end_date}_1m.csv')
 
     #df = get_price(order_book_id, start_date, end_date, '3m')
     #df.to_csv(f'{order_book_id}_{start_date}_{end_date}_3m.csv')
 
-    df = get_price(order_book_id, start_date, end_date, '15m')
-    df.to_csv(f'{order_book_id}_{start_date}_{end_date}_15m.csv')
+    #df = get_price(order_book_id, start_date, end_date, '15m')
+    #df.to_csv(f'{order_book_id}_{start_date}_{end_date}_15m.csv')
 
     # df = get_price(order_book_id, start_date, end_date, '60m')
     # df.to_csv(f'{order_book_id}_{start_date}_{end_date}_1h.csv')
@@ -208,7 +208,7 @@ def mark_turning_point(filepath):
 
     df = df[['datetime', 'open', 'high', 'low', 'close', 'volume', 'openinterest', 'turningpoint', 'dominant']]
     df.set_index('datetime', inplace=True)
-    df.to_csv('SA88_1d.csv')
+    df.to_csv('SA88_1m.csv')
 
 
 def get_all_instruments(type='Future'):
@@ -224,6 +224,6 @@ if __name__ == '__main__':
     # short_term_trading_data(filepath='I88_20131018_20230913_1d.csv')
     # short_term_trading_data(filepath='I88_20131018_20230913_15m.csv')
 
-    # rqdata_download('SA88', '20191201', '20230908')
+    # rqdata_download('SA88', '20230919', '20230930')
     # mark_turning_point(filepath='SA88_20191201_20230908_1d.csv')
-    mark_turning_point(filepath='SA88_20191201_20230908_1d.csv')
+    mark_turning_point(filepath='SA88_20230919_20230930_1m.csv')

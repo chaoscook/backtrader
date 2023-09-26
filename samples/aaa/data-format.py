@@ -114,8 +114,8 @@ def mark_tp(df_in):
 
 
 if __name__ == '__main__':
-    instrument = 'SA88'
-    from_date = '20191201'
+    instrument = 'IF88'
+    from_date = '20000308'
     to_date = '20230908'
     period = '1d'
 
